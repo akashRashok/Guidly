@@ -39,7 +39,7 @@
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/guidly.git
+   git clone https://github.com/akashRashok/guidly.git
    cd guidly
    ```
 
@@ -318,8 +318,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📞 Support
 
 - 📖 [Documentation](docs/)
-- 🐛 [Report Issues](https://github.com/yourusername/guidly/issues)
-- 💬 [Discussions](https://github.com/yourusername/guidly/discussions)
+- 🐛 [Report Issues](https://github.com/akashRashok/guidly/issues)
+- 💬 [Discussions](https://github.com/akashRashok/guidly/discussions)
 
 ---
 

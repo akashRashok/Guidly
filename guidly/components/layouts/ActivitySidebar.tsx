@@ -131,3 +131,4 @@ export function ActivitySidebar({ activities = [], recentStudents = [] }: Activi
   );
 }
 
+

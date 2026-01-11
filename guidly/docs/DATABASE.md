@@ -373,3 +373,4 @@ db.select({
 
 **Note**: This database design prioritizes simplicity and clarity over complex features. It aligns with the product's philosophy of doing less and doing it well.
 
+
