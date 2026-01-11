@@ -4,7 +4,7 @@
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/License-MIT-green)]([LICENSE](https://github.com/akashRashok/Guidly/blob/main/guidly/LICENSE))
 
 ## ✨ Features
 
