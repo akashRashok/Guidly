@@ -73,9 +73,10 @@ async function callOllama(prompt: string, maxTokens: number = 200): Promise<stri
         model: OLLAMA_MODEL,
         prompt,
         options: {
-          temperature: 0.2,
+          temperature: 0.5,          // Increased from 0.2 for faster inference
           top_p: 0.9,
           num_predict: maxTokens,
+          num_ctx: 2048,             // Reduced context window for speed
         },
         stream: false,
       }),
@@ -85,15 +86,22 @@ async function callOllama(prompt: string, maxTokens: number = 200): Promise<stri
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      console.error("Ollama API error:", response.status, response.statusText);
+      console.error(`Ollama API error: ${response.status} ${response.statusText}`);
       return null;
     }
 
     const data = (await response.json()) as OllamaResponse;
-    return data.response?.trim() || null;
+    const responseText = data.response?.trim();
+
+    if (!responseText) {
+      console.warn("Ollama returned empty response");
+      return null;
+    }
+
+    return responseText;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      console.error("Ollama request timed out");
+      console.error(`Ollama request timed out after ${OLLAMA_TIMEOUT_MS}ms`);
     } else {
       console.error("Ollama request failed:", error);
     }
@@ -127,9 +135,9 @@ export async function generateExplanation(
   // Try static fallback first if we have a misconception description
   if (request.misconceptionDescription) {
     const staticResponse = getStaticFallback(request);
-    
+
     // Use AI to generate both explanation and follow-up question
-    const aiPrompt = `You are helping a secondary school student understand why their answer is incorrect.
+    const aiPrompt = `You are helping a secondary school student understand their mistake and how to solve it correctly.
 
 Question: ${request.question}
 Correct answer: ${request.correctAnswer}
@@ -137,27 +145,28 @@ Student's wrong answer: ${request.studentAnswer}
 Topic: ${request.topic}
 Misconception: ${request.misconceptionDescription}
 
-Provide:
-1. A brief, clear explanation (2-3 sentences) of why the answer is wrong, referencing the misconception.
-2. One simple follow-up question to check if they understand the correct concept.
-3. The correct answer to the follow-up question.
+In 1-2 sentences (under 50 words), explain:
+1. What they did wrong (the misconception)
+2. How to solve it correctly (the right approach)
+
+Be encouraging and instructional.
 
 Respond in this exact JSON format:
 {
-  "explanation": "Why the answer is wrong",
+  "explanation": "What went wrong + how to solve it correctly (1-2 sentences, under 50 words)",
   "followUpQuestion": "A simpler question to check understanding",
   "followUpAnswer": "The correct answer to the follow-up"
 }`;
 
-    const aiResponse = await callOllama(aiPrompt, 300);
-    
+    const aiResponse = await callOllama(aiPrompt, 500);
+
     if (aiResponse) {
       const parsed = parseJsonResponse<{
         explanation: string;
         followUpQuestion: string;
         followUpAnswer: string;
       }>(aiResponse);
-      
+
       if (parsed?.explanation && parsed?.followUpQuestion && parsed?.followUpAnswer) {
         return {
           explanation: parsed.explanation,
@@ -167,42 +176,36 @@ Respond in this exact JSON format:
         };
       }
     }
-    
+
     // If AI fails, try just rephrasing the explanation
-    const rephrasePrompt = `Given the following misconception description and student answer, rewrite the explanation in clear, neutral language suitable for a secondary school student.
+    const rephrasePrompt = `In 1-2 simple sentences for a secondary school student, explain what went wrong and how to solve it correctly. Keep it under 50 words.
 
-Do not introduce new concepts.
-Do not add teaching strategies.
-Do not mention the model or AI.
-
-Misconception description: ${request.misconceptionDescription}
+Misconception: ${request.misconceptionDescription}
 Student answer: ${request.studentAnswer}
 Correct answer: ${request.correctAnswer}
 
-Respond with only the explanation text, no JSON or formatting.`;
+Write ONLY the explanation (what's wrong + how to fix it), no JSON or extra text.`;
 
-    const rephrased = await callOllama(rephrasePrompt, 150);
-    
+    const rephrased = await callOllama(rephrasePrompt, 200);
+
     if (rephrased && rephrased.length > 20) {
       // Generate follow-up question separately
-      const followUpPrompt = `Based on this question and misconception, create a simple follow-up question to check understanding.
+      const followUpPrompt = `Create ONE simple follow-up question.
 
 Original question: ${request.question}
 Correct answer: ${request.correctAnswer}
 Misconception: ${request.misconceptionDescription}
 
-Create ONE simpler question that tests the same concept. Keep it very simple.
+Format:
+Question: [simpler question]
+Answer: [correct answer]`;
 
-Respond in this format:
-Question: [your follow-up question]
-Answer: [the correct answer]`;
+      const followUpResponse = await callOllama(followUpPrompt, 200);
 
-      const followUpResponse = await callOllama(followUpPrompt, 100);
-      
       if (followUpResponse) {
         const questionMatch = followUpResponse.match(/Question:\s*(.+?)(?:\n|Answer:)/i);
         const answerMatch = followUpResponse.match(/Answer:\s*(.+?)(?:\n|$)/i);
-        
+
         if (questionMatch && answerMatch) {
           return {
             explanation: rephrased,
@@ -212,7 +215,7 @@ Answer: [the correct answer]`;
           };
         }
       }
-      
+
       // If follow-up generation fails, use rephrased explanation with static follow-up
       return {
         ...staticResponse,
@@ -220,38 +223,40 @@ Answer: [the correct answer]`;
         confidence: "medium",
       };
     }
-    
+
     return staticResponse;
   }
 
   // No static misconception available - try AI
-  const prompt = `You are helping a secondary school student understand why their answer is incorrect.
+  const prompt = `Help a secondary school student understand their mistake and how to solve it correctly.
 
 Question: ${request.question}
 Correct answer: ${request.correctAnswer}
 Student's answer: ${request.studentAnswer}
 Topic: ${request.topic}
 
-Provide a brief, clear explanation of why the answer is wrong. Keep it to 2-3 sentences. Be encouraging, not critical.
+In 1-2 sentences (under 50 words), explain:
+1. What they did wrong
+2. How to solve it correctly (the right method/approach)
 
-Then provide one simple follow-up question to check understanding.
+Be encouraging and instructional.
 
 Respond in this exact JSON format:
 {
-  "explanation": "Why the answer is wrong",
+  "explanation": "What went wrong + how to solve it correctly (1-2 sentences, under 50 words)",
   "followUpQuestion": "A simpler question to check understanding",
   "followUpAnswer": "The correct answer to the follow-up"
 }`;
 
-  const response = await callOllama(prompt, 250);
-  
+  const response = await callOllama(prompt, 500);
+
   if (response) {
     const parsed = parseJsonResponse<{
       explanation: string;
       followUpQuestion: string;
       followUpAnswer: string;
     }>(response);
-    
+
     if (parsed?.explanation && parsed?.followUpQuestion && parsed?.followUpAnswer) {
       return {
         explanation: parsed.explanation,
@@ -272,16 +277,16 @@ Respond in this exact JSON format:
 function getStaticFallback(request: ExplanationRequest): ExplanationResponse {
   if (request.misconceptionDescription) {
     return {
-      explanation: `Your answer "${request.studentAnswer}" isn't quite right. ${request.misconceptionDescription}. The correct answer is ${request.correctAnswer}.`,
-      followUpQuestion: `Can you try a similar question? What would happen if you applied the correct approach?`,
+      explanation: `Your answer "${request.studentAnswer}" isn't correct because ${request.misconceptionDescription.toLowerCase()}. To solve this correctly, you need to use the right approach, which gives us ${request.correctAnswer}.`,
+      followUpQuestion: `Can you try a similar question using the correct method?`,
       followUpAnswer: request.correctAnswer,
       confidence: "medium",
     };
   }
 
   return {
-    explanation: `Your answer "${request.studentAnswer}" isn't correct. The right answer is ${request.correctAnswer}. Take a moment to think about the approach you used.`,
-    followUpQuestion: `Let's try again: what is the correct answer to this question?`,
+    explanation: `Your answer "${request.studentAnswer}" isn't correct. The right answer is ${request.correctAnswer}. To solve this, you need to apply the correct method for ${request.topic}.`,
+    followUpQuestion: `Let's try again using the correct approach: what is the answer?`,
     followUpAnswer: request.correctAnswer,
     confidence: "low",
   };
@@ -298,19 +303,15 @@ export async function generateTeacherSummary(
     return "No misconceptions identified in this assignment. Students performed well overall.";
   }
 
-  const prompt = `Given the following list of misconception counts, produce a single-sentence summary describing the most common misunderstanding.
-
-Do not suggest lesson plans.
-Do not include advice.
-Keep it factual and brief.
+  const prompt = `Summarize the most common misconception in ONE sentence. Be factual and brief.
 
 Data:
 ${misconceptionData.map((m) => `- ${m.category}: ${m.description} (${m.count} students)`).join("\n")}
 
-Summary:`;
+Summary (one sentence):`;
 
-  const response = await callOllama(prompt, 100);
-  
+  const response = await callOllama(prompt, 150);
+
   if (response && response.length > 10 && response.length < 500) {
     // Clean up the response - remove any leading/trailing quotes or formatting
     return response.replace(/^["']|["']$/g, "").trim();
@@ -349,22 +350,19 @@ export async function mapMisconception(
     .map((m, i) => `${i + 1}. [${m.id}] ${m.category}: ${m.description}`)
     .join("\n");
 
-  const prompt = `Given a student's wrong answer, identify which misconception best explains their error.
+  const prompt = `Match the student's error to a misconception.
 
 Question: ${request.question}
 Correct answer: ${request.correctAnswer}
 Student's wrong answer: ${request.studentAnswer}
-Topic: ${request.topic}
 
-Available misconceptions:
+Misconceptions:
 ${misconceptionList}
 
-Return ONLY the misconception ID (the text in brackets like [abc123]) that best matches this error. If none match well, return "none".
-
-Answer:`;
+Return ONLY the ID in brackets (e.g., [abc123]) or "none".`;
 
   const response = await callOllama(prompt, 50);
-  
+
   if (response) {
     // Extract ID from response
     const idMatch = response.match(/\[([^\]]+)\]/);
@@ -375,7 +373,7 @@ Answer:`;
         return matchedId;
       }
     }
-    
+
     // Try to match by number
     const numMatch = response.match(/^(\d+)/);
     if (numMatch) {
@@ -402,19 +400,17 @@ export async function suggestMisconceptions(
     return [];
   }
 
-  const prompt = `For a ${topic} question, identify which of these common misconceptions might apply.
+  const prompt = `Which misconceptions apply to this ${topic} question?
 
 Question: ${questionText}
 
-Common misconceptions for this topic:
+Misconceptions:
 ${existingMisconceptions.map((m, i) => `${i + 1}. ${m.category}: ${m.description}`).join("\n")}
 
-Return the numbers of the 1-3 most relevant misconceptions, separated by commas. Example: "1, 3"
-
-Most relevant:`;
+Return 1-3 numbers (e.g., "1, 3"):`;
 
   const response = await callOllama(prompt, 30);
-  
+
   if (response) {
     const numbers = response.match(/\d+/g);
     if (numbers) {
@@ -444,25 +440,22 @@ export async function generateFollowUpQuestion(
   misconception: string,
   topic: string
 ): Promise<{ question: string; answer: string } | null> {
-  const prompt = `Create a simpler follow-up question to check if a student understands their misconception.
+  const prompt = `Create ONE simple follow-up question.
 
-Original question: ${originalQuestion}
+Original: ${originalQuestion}
 Correct answer: ${correctAnswer}
-Student's misconception: ${misconception}
-Topic: ${topic}
+Misconception: ${misconception}
 
-Create ONE simpler question that tests the same concept. Keep it very simple.
+Format:
+Question: [simpler question]
+Answer: [correct answer]`;
 
-Respond in this exact format:
-Question: [your follow-up question]
-Answer: [the correct answer]`;
+  const response = await callOllama(prompt, 200);
 
-  const response = await callOllama(prompt, 100);
-  
   if (response) {
     const questionMatch = response.match(/Question:\s*(.+?)(?:\n|Answer:)/i);
     const answerMatch = response.match(/Answer:\s*(.+?)(?:\n|$)/i);
-    
+
     if (questionMatch && answerMatch) {
       return {
         question: questionMatch[1].trim(),
@@ -497,5 +490,111 @@ export async function isOllamaAvailable(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Generate questions from document text
+ * Used for document upload feature
+ */
+export async function generateQuestionsFromText(
+  text: string,
+  topic: string,
+  numQuestions: number = 5
+): Promise<Array<{
+  questionText: string;
+  correctAnswer: string;
+  confidence: "high" | "medium" | "low";
+}>> {
+  // Limit text to 4000 characters to fit in context window
+  const truncatedText = text.slice(0, 4000);
+
+  const prompt = `You are helping a teacher create homework questions from a document.
+
+DOCUMENT EXCERPT:
+"""
+${truncatedText}
+"""
+
+TOPIC: ${topic}
+
+Generate ${numQuestions} questions based on this document. Each question should:
+- Test understanding of key concepts from the document
+- Be appropriate for secondary school students
+- Have a clear, concise correct answer
+- Be directly answerable from the document content
+
+Respond ONLY with a valid JSON array. Do not wrap in markdown code blocks. Do not add any text before or after the JSON.
+
+Expected format:
+[
+  {
+    "questionText": "Question 1?",
+    "correctAnswer": "Answer 1",
+    "confidence": "high"
+  }
+]
+
+Generate exactly ${numQuestions} questions now:`;
+
+  const response = await callOllama(prompt, 1000);
+
+  if (response) {
+    try {
+      // Clean up response: remove markdown code blocks and find array
+      let cleanResponse = response.trim();
+
+      // Remove markdown code blocks if present
+      if (cleanResponse.includes("```")) {
+        cleanResponse = cleanResponse.replace(/```json/g, "").replace(/```/g, "");
+      }
+
+      // Find the JSON array substring
+      const startIndex = cleanResponse.indexOf("[");
+      const endIndex = cleanResponse.lastIndexOf("]");
+
+      if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+        cleanResponse = cleanResponse.slice(startIndex, endIndex + 1);
+      } else {
+        console.warn("Could not find JSON array in response");
+        console.debug("Raw response:", response);
+        return [];
+      }
+
+      // Parse JSON
+      const parsed = JSON.parse(cleanResponse) as Array<{
+        questionText: string;
+        correctAnswer: string;
+        confidence?: "high" | "medium" | "low";
+      }>;
+
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Validate and return questions
+        const validQuestions = parsed
+          .filter(q => q.questionText && q.correctAnswer)
+          .slice(0, numQuestions)
+          .map(q => ({
+            questionText: q.questionText,
+            correctAnswer: q.correctAnswer,
+            confidence: (q.confidence || "medium") as "high" | "medium" | "low",
+          }));
+
+        if (validQuestions.length > 0) {
+          return validQuestions;
+        } else {
+          console.warn("Parsed questions were invalid (missing text or answer)");
+        }
+      } else {
+        console.warn("AI response was not a JSON array");
+      }
+    } catch (error) {
+      console.error("Failed to parse AI response for questions:", error);
+      console.debug("Raw AI response:", response);
+    }
+  } else {
+    console.warn("Ollama returned null response for question generation");
+  }
+
+  // Fallback: return empty array
+  return [];
 }
 

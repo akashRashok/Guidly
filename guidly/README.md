@@ -10,6 +10,7 @@
 
 ### For Teachers
 - 🎯 **Simple Assignment Creation** - Create topic-based homework with custom questions or templates
+- 📄 **Document Upload** - Upload PDF, DOCX, or TXT files to auto-extract questions using AI (max 10MB)
 - 📊 **Misconception Visibility** - See which misconceptions are most common with AI-generated teaching recommendations
 - 👥 **Student Tracking** - View completion status and identify struggling students
 - 🎨 **Modern UI** - Clean sidebar-based interface with activity feed
@@ -24,8 +25,8 @@
 ### Technical Highlights
 - 🤖 **Local AI Processing** - Uses Ollama for privacy-first AI (no external API calls)
 - 🔒 **Privacy-First** - All AI processing happens locally, no data sent to external services
-- ⚡ **Fast & Reliable** - Deterministic-first approach with AI as intelligent fallback
-- 🎯 **Production-Ready** - Fully functional without AI using static fallbacks
+- ⚡ **Fast & Reliable** - Optimized local LLM inference with intelligent caching
+- 🎯 **Production-Ready** - Built on proven open-source models (Mistral, Llama3, Qwen)
 
 ## 🚀 Quick Start
 
@@ -33,7 +34,7 @@
 
 - Node.js 18+ 
 - npm or yarn
-- [Ollama](https://ollama.ai) (optional - for AI features)
+- [Ollama](https://ollama.ai) - **Required** for AI-powered features
 
 ### Installation
 
@@ -56,7 +57,7 @@
    NEXTAUTH_URL=http://localhost:3000
    NEXTAUTH_SECRET=your-secret-key-here
    
-   # Optional - AI Configuration
+   # Required - AI Configuration
    OLLAMA_API_URL=http://localhost:11434
    OLLAMA_MODEL=mistral
    OLLAMA_ENABLED=true
@@ -82,7 +83,7 @@
    npm run db:seed
    ```
 
-5. **Start Ollama (optional, for AI features)**
+5. **Start Ollama (required)**
    ```bash
    # Install Ollama from https://ollama.ai
    ollama pull mistral
@@ -124,14 +125,14 @@ Recommended models (pick one):
    OLLAMA_ENABLED=true
    ```
 
-### Running Without AI
+### Fallback Behavior
 
-The system functions **fully without AI**. If Ollama is unavailable:
-- Static explanations are used for misconception feedback
-- Predefined misconception categories are still matched
-- Teacher summaries use simple templates
+If Ollama is temporarily unavailable, the system will:
+- Use static explanations for misconception feedback
+- Match against predefined misconception categories
+- Provide basic teacher summaries
 
-Set `OLLAMA_ENABLED=false` to disable AI entirely.
+For full functionality, ensure Ollama is running. Set `OLLAMA_ENABLED=false` only for testing or debugging purposes.
 
 ## 📚 Documentation
 
@@ -146,7 +147,8 @@ Set `OLLAMA_ENABLED=false` to disable AI entirely.
 - **Database**: SQLite with [Drizzle ORM](https://orm.drizzle.team/)
 - **Authentication**: [NextAuth.js v5](https://next-auth.js.org/)
 - **AI**: [Ollama](https://ollama.ai) (local LLM) - mistral, llama3, qwen2.5
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+- **Document Processing**: mammoth (DOCX), pdf-parse (PDF)
+- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
 - **Language**: TypeScript
 
 ## 📖 Usage
@@ -155,10 +157,11 @@ Set `OLLAMA_ENABLED=false` to disable AI entirely.
 
 1. Sign in at `/login` (in development, any email works)
 2. Create a new assignment from the dashboard
-3. Select a topic and add questions (manual or from templates)
-4. View common misconceptions for the selected topic
-5. Share the generated link and class code with students
-6. View results and misconceptions after students complete the assignment
+3. Select a topic and add questions (manually, from templates, or upload a document)
+4. Use AI-powered document upload to extract questions from PDF, DOCX, or TXT files
+5. View common misconceptions for the selected topic
+6. Share the generated link and class code with students
+7. View results and misconceptions after students complete the assignment
 
 ### For Students
 
@@ -173,11 +176,10 @@ Set `OLLAMA_ENABLED=false` to disable AI entirely.
 Guidly succeeds by doing less and doing it well:
 
 - ✅ **Focused on learning clarity** - Not grading efficiency
-- ✅ **Conservative AI usage** - Falls back to static explanations when uncertain
+- ✅ **Smart AI usage** - Local processing with intelligent fallbacks when uncertain
 - ✅ **No student accounts** - Low friction for students
 - ✅ **Data isolation** - Student data exists only within single assignments
 - ✅ **Minimal UI** - No dashboards, charts, or analytics
-- ✅ **AI as fallback** - System works fully without AI
 - ✅ **Privacy-first** - Local AI processing, no external dependencies
 
 See [PRODUCT.md](PRODUCT.md) for complete design philosophy and constraints.
@@ -223,7 +225,7 @@ guidly/
 ### Development Notes
 
 - In development mode, authentication uses a simplified credentials provider (any email works, no password)
-- The system is fully functional without Ollama - AI is optional
+- Ensure Ollama is running for full functionality (AI-powered features require it)
 - First AI request may take 30+ seconds (model loading), subsequent requests are fast (~100ms)
 
 ## 🚢 Production Deployment
@@ -249,10 +251,12 @@ Required:
 - `NEXTAUTH_URL` - Your production URL
 - `NEXTAUTH_SECRET` - Strong secret (use `openssl rand -base64 32`)
 
-Optional:
+Required for AI features:
 - `OLLAMA_API_URL` - Ollama server URL (default: http://localhost:11434)
 - `OLLAMA_MODEL` - Model to use (default: mistral)
 - `OLLAMA_ENABLED` - Enable/disable AI (default: true)
+
+Optional:
 - `EMAIL_SERVER` - For magic link authentication
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` - For Google OAuth
 

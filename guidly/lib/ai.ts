@@ -22,4 +22,6 @@ export {
   suggestMisconceptions,
   generateFollowUpQuestion,
   isOllamaAvailable,
+  generateQuestionsFromText,
 } from "./llmService";
+
